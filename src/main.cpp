@@ -12,13 +12,17 @@ const unsigned long LIGHT_ON_TIME =
 const unsigned long LIGHT_OFF_TIME =
     6UL * 60UL * 60UL * 1000UL;
 
+const int LIGHT_OUTPUT_PIN = 5;
+const int LIGHT_BUTTON_PIN = 10;
+
 const int SOIL_MOISTURE_SENSOR_PIN = A0;
 const int SOIL_MOISTURE_DRY_THRESHOLD = 900;
 const int WATER_PUMP_CONTROL_PIN = 4;
 
 // Instâncias
 LightController lightController(
-    5,
+    LIGHT_OUTPUT_PIN,
+    LIGHT_BUTTON_PIN,
     LIGHT_ON_TIME,
     LIGHT_OFF_TIME);
 
@@ -47,15 +51,22 @@ void setup()
     soilMoistureController.begin();
 }
 
+static unsigned long lastSlowUpdate = 0;
+
 void loop()
 {
+    // LightController roda a cada iteração para que o botão
+    // seja amostrado em ~1 ms — necessário para o debounce funcionar.
     lightController.update();
 
-    temperatureController.update();
+    // Demais controllers rodam a cada 1 s para não spammar serial
+    // com leituras de sensor e não desperdiçar ciclos de CPU.
+    if (millis() - lastSlowUpdate >= 1000UL)
+    {
+        lastSlowUpdate += 1000UL;
 
-    humidityController.update();
-
-    soilMoistureController.update();
-
-    delay(1000);
+        temperatureController.update();
+        humidityController.update();
+        soilMoistureController.update();
+    }
 }

@@ -5,50 +5,88 @@
 #include "controllers/LightController.h"
 #include "utils/Debug.h"
 
-LightController::LightController(int pin,
+LightController::LightController(int outputPin,
+                                 int buttonPin,
                                  unsigned long onDuration,
                                  unsigned long offDuration)
+    : button(buttonPin)
 {
-    outputPin = pin;
+    this->outputPin = outputPin;
     onTime = onDuration;
     offTime = offDuration;
-
-    state = false;
+    lightOn = true;
     lastChange = 0;
+    hoursElapsed = 0;
 }
 
 void LightController::begin()
 {
-    DEBUG_PRINTLN("[LIGHT] iniciado");
     pinMode(outputPin, OUTPUT);
+    button.begin();
+    persistence.begin();
+
+    if (persistence.hasValidData())
+    {
+        persistence.load(lightOn, hoursElapsed);
+
+        // Recua o lastChange para que o timer "retome" do ponto salvo.
+        // A aritmética unsigned lida corretamente com o underflow.
+        lastChange = millis() - (unsigned long)hoursElapsed * 3600000UL;
+
+        DEBUG_PRINTLN("[LIGHT] Estado restaurado do EEPROM");
+    }
+    else
+    {
+        lightOn = true;
+        hoursElapsed = 0;
+        lastChange = millis();
+        persistence.save(lightOn, hoursElapsed);
+    }
+
+    digitalWrite(outputPin, lightOn ? HIGH : LOW);
+
+    DEBUG_PRINTLN(lightOn ? "[LIGHT] ON" : "[LIGHT] OFF");
 }
 
 void LightController::update()
 {
-    unsigned long currentMillis = millis();
+    button.update();
 
-    if (state)
+    if (button.wasPressed())
     {
-        digitalWrite(outputPin, LOW);
-
-        if (currentMillis - lastChange >= onTime)
-        {
-            state = false;
-            lastChange = currentMillis;
-
-            DEBUG_PRINTLN("[LIGHT] OFF");
-        }
+        DEBUG_PRINTLN("[LIGHT] Botao - toggle manual");
+        resetCycle(!lightOn);
+        return;
     }
-    else
+
+    unsigned long elapsed = millis() - lastChange;
+    unsigned long phaseDuration = lightOn ? onTime : offTime;
+
+    if (elapsed >= phaseDuration)
     {
-        digitalWrite(outputPin, HIGH);
-
-        if (currentMillis - lastChange >= offTime)
-        {
-            state = true;
-            lastChange = currentMillis;
-
-            DEBUG_PRINTLN("[LIGHT] ON");
-        }
+        resetCycle(!lightOn);
+        return;
     }
+
+    // Incrementa contador de horas a cada hora completa na fase atual
+    unsigned long nextHourMs = (unsigned long)(hoursElapsed + 1) * 3600000UL;
+    if (elapsed >= nextHourMs)
+    {
+        hoursElapsed++;
+        persistence.save(lightOn, hoursElapsed);
+
+        DEBUG_PRINT("[LIGHT] Horas na fase atual: ");
+        DEBUG_PRINTLN(hoursElapsed);
+    }
+}
+
+void LightController::resetCycle(bool newLightOn)
+{
+    lightOn = newLightOn;
+    hoursElapsed = 0;
+    lastChange = millis();
+    persistence.save(lightOn, hoursElapsed);
+    digitalWrite(outputPin, lightOn ? HIGH : LOW);
+
+    DEBUG_PRINTLN(lightOn ? "[LIGHT] ON" : "[LIGHT] OFF");
 }

@@ -6,6 +6,8 @@
 #define LIGHT_CONTROLLER_H
 
 #include <Arduino.h>
+#include "drivers/ButtonDriver.h"
+#include "drivers/LightPersistenceDriver.h"
 
 class LightController
 {
@@ -15,11 +17,18 @@ private:
     unsigned long onTime;
     unsigned long offTime;
 
-    bool state;
+    bool lightOn;
     unsigned long lastChange;
+    uint16_t hoursElapsed;
+
+    ButtonDriver button;
+    LightPersistenceDriver persistence;
+
+    void resetCycle(bool newLightOn);
 
 public:
-    LightController(int pin,
+    LightController(int outputPin,
+                    int buttonPin,
                     unsigned long onDuration,
                     unsigned long offDuration);
 
